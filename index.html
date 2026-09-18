@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#071018">
+  <title>Wiring QR Manager</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="brand-dot"></span> WIRING QR MANAGER</div>
+  <div class="top-actions">
+    <span id="adminState" class="badge">Viewer</span>
+    <button id="loginBtn" class="small secondary">Admin login</button>
+    <button id="logoutBtn" class="small secondary hidden">Logout</button>
+  </div>
+</header>
+
+<main>
+  <section id="home" class="view active">
+    <div class="hero">
+      <div>
+        <div class="eyebrow">QR / WIRING DATABASE</div>
+        <h1>Scan. Trace. Connect.</h1>
+        <p>QR codes contain only the 3-digit number. The database holds the actual cable/device information.</p>
+      </div>
+      <div class="hero-code">101</div>
+    </div>
+    <div class="grid menu-grid">
+      <button class="menu-card" data-action="scan"><b>Scan QR</b><span>View a cable or device</span></button>
+      <button class="menu-card admin-only" data-action="link"><b>Link QR</b><span>Scan a READY QR and assign data</span></button>
+      <button class="menu-card admin-only" data-action="edit"><b>Edit QR</b><span>Scan an ACTIVE QR and edit it</span></button>
+      <button class="menu-card admin-only" data-action="bulk"><b>Bulk Mode</b><span>Cable ↔ cable or cable ↔ device</span></button>
+      <button class="menu-card admin-only" data-action="deactivate"><b>Deactivate</b><span>Scan many and deactivate or clear</span></button>
+      <button class="menu-card admin-only" data-action="generate"><b>Generate QR</b><span>Create unused cable/device numbers</span></button>
+      <button class="menu-card" data-action="database"><b>Database</b><span>Browse current QR records</span></button>
+    </div>
+  </section>
+
+  <section id="scan" class="view">
+    <div class="section-head"><button class="back" data-go="home">←</button><div><h2>Scan QR</h2><p>Scan a 3-digit code to view its record.</p></div></div>
+    <div class="scanner-shell">
+      <div id="reader"></div>
+      <div class="scan-manual"><input id="manualScan" inputmode="numeric" maxlength="3" placeholder="Or type 101"><button id="manualScanBtn">Open</button></div>
+    </div>
+    <div id="scanResult"></div>
+  </section>
+
+  <section id="link" class="view">
+    <div class="section-head"><button class="back" data-go="home">←</button><div><h2>Link QR</h2><p>READY → ACTIVE</p></div></div>
+    <div class="panel"><button id="linkScanBtn">Scan QR to link</button><div id="linkFormWrap"></div></div>
+  </section>
+
+  <section id="edit" class="view">
+    <div class="section-head"><button class="back" data-go="home">←</button><div><h2>Edit QR</h2><p>ACTIVE → edit. READY → Link QR.</p></div></div>
+    <div class="panel"><button id="editScanBtn">Scan QR to edit</button><div id="editFormWrap"></div></div>
+  </section>
+
+  <section id="bulk" class="view">
+    <div class="section-head"><button class="back" data-go="home">←</button><div><h2>Bulk Mode</h2><p>Scan two QR codes, then complete the link.</p></div></div>
+    <div class="panel">
+      <div class="bulk-mode-row">
+        <button id="bulkStartBtn">Start scanning</button>
+        <button id="bulkUndoBtn" class="secondary hidden">Undo last link</button>
+      </div>
+      <div id="bulkStatus" class="status-box">Waiting.</div>
+      <div id="bulkPinWrap"></div>
+      <div id="bulkLast"></div>
+    </div>
+  </section>
+
+  <section id="deactivate" class="view">
+    <div class="section-head"><button class="back" data-go="home">←</button><div><h2>Deactivate / Clear</h2><p>Scan multiple QR codes and select an action.</p></div></div>
+    <div class="panel">
+      <button id="deactivateScanBtn">Scan next QR</button>
+      <div id="deactivateList" class="check-list"></div>
+      <div class="button-row"><button id="deactivateBtn" class="danger">Permanently deactivate selected</button><button id="clearBtn" class="secondary">Clear data → READY</button></div>
+    </div>
+  </section>
+
+  <section id="generate" class="view">
+    <div class="section-head"><button class="back" data-go="home">←</button><div><h2>Generate QR Codes</h2><p>Cables: 100–299 · Devices: 300–999</p></div></div>
+    <div class="panel form-grid two">
+      <label>Cable QR amount<input id="cableAmount" type="number" min="0" max="200" value="10"></label>
+      <label>Device QR amount<input id="deviceAmount" type="number" min="0" max="700" value="5"></label>
+    </div>
+    <div class="panel"><button id="generateBtn">Generate unused codes</button><div id="generateResult"></div></div>
+  </section>
+
+  <section id="database" class="view">
+    <div class="section-head"><button class="back" data-go="home">←</button><div><h2>Database</h2><p>View all generated QR records.</p></div></div>
+    <div class="panel filters"><select id="dbType"><option value="">All types</option><option>CABLE</option><option>DEVICE</option></select><select id="dbStatus"><option value="">All status</option><option>READY</option><option>ACTIVE</option><option>DEACTIVATED</option></select><button id="dbRefresh" class="secondary">Refresh</button></div>
+    <div id="dbTableWrap" class="table-wrap"></div>
+  </section>
+
+  <section id="record" class="view">
+    <div class="section-head"><button class="back" data-go="home">←</button><div><h2 id="recordTitle">Record</h2><p id="recordSubtitle"></p></div></div>
+    <div id="recordBody"></div>
+  </section>
+</main>
+
+<div id="modal" class="modal hidden"><div class="modal-card"><div class="modal-head"><h3 id="modalTitle">Scan</h3><button id="modalClose">×</button></div><div id="modalBody"></div></div></div>
+
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>
