@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS qr_records (
-  code CHAR(3) PRIMARY KEY,
+  code VARCHAR(4) PRIMARY KEY,
   type VARCHAR(10) NOT NULL CHECK (type IN ('CABLE', 'DEVICE')),
   status VARCHAR(14) NOT NULL DEFAULT 'READY' CHECK (status IN ('READY', 'ACTIVE', 'DEACTIVATED')),
   name TEXT NOT NULL DEFAULT '',
@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS qr_records (
 
 CREATE TABLE IF NOT EXISTS device_pins (
   id BIGSERIAL PRIMARY KEY,
-  device_code CHAR(3) NOT NULL REFERENCES qr_records(code) ON DELETE CASCADE,
+  device_code VARCHAR(4) NOT NULL REFERENCES qr_records(code) ON DELETE CASCADE,
   pin_name TEXT NOT NULL,
   pin_description TEXT NOT NULL DEFAULT '',
   UNIQUE(device_code, pin_name)
@@ -22,10 +22,10 @@ CREATE TABLE IF NOT EXISTS device_pins (
 
 CREATE TABLE IF NOT EXISTS connections (
   id BIGSERIAL PRIMARY KEY,
-  cable_code CHAR(3) NOT NULL REFERENCES qr_records(code) ON DELETE CASCADE,
+  cable_code VARCHAR(4) NOT NULL REFERENCES qr_records(code) ON DELETE CASCADE,
   slot SMALLINT NOT NULL CHECK (slot IN (1, 2)),
   endpoint_type VARCHAR(10) NOT NULL CHECK (endpoint_type IN ('TEXT', 'CABLE', 'DEVICE')),
-  endpoint_code CHAR(3),
+  endpoint_code VARCHAR(4),
   endpoint_pin TEXT,
   descriptive_text TEXT NOT NULL DEFAULT '',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

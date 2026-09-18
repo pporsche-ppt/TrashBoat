@@ -67,10 +67,10 @@ async function stopScanner(){
   if(state.scanner){ try { if(state.scannerActive) await state.scanner.stop(); } catch{} try{ await state.scanner.clear(); }catch{} }
   state.scanner=null; state.scannerActive=false;
 }
-function validateScannedCode(code){ return /^\d{3}$/.test(code) ? code : null; }
+function validateScannedCode(code){ return /^\d{4}$/.test(code) ? code : null; }
 
 async function scanView(code){
-  code=validateScannedCode(code); if(!code){toast('QR must encode exactly three digits.','error');return;}
+  code=validateScannedCode(code); if(!code){toast('QR must encode exactly four digits.','error');return;}
   try{ const data=await api('/api/qr/'+code); showRecord(data); }catch(e){ el('scanResult').innerHTML='<div class="notice error">'+esc(e.message)+'</div>'; }
 }
 
@@ -84,14 +84,14 @@ function recordHtml(data){
   } else {
     extra=`<div class="field" style="grid-column:1/-1"><label>Connections</label><div>${[1,2].map(slot=>{const c=(data.connections||[]).find(x=>Number(x.slot)===slot); return `<div class="conn-card"><div class="conn-title">Connection ${slot}</div>${c?connectionDisplay(c):'<span class="muted">NOT CONNECTED</span>'}</div>`}).join('')}</div></div>`;
   }
-  return `<div class="record-card"><div class="record-top"><div><div class="record-code">${esc(data.code)}</div><div class="muted">${esc(data.type)}</div></div><div>${statusChip(data.status)}</div></div><div class="record-grid"><div class="field"><label>Name</label><div class="value">${esc(data.name)||'—'}</div></div><div class="field"><label>Description tags</label><div class="value">${(data.description_tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join('')||'—'}</div></div><div class="field"><label>Operation Voltage</label><div class="value">${esc(data.operation_voltage)||'—'}</div></div><div class="field"><label>Bypass Protection Module</label><div class="value">${esc(data.bypass_protection)}</div></div><div class="field"><label>Emergency</label><div class="value">${esc(data.emergency)}</div></div><div class="field"><label>Details</label><div class="value">${esc(data.details)||'—'}</div></div>${extra}</div></div>`;
+  return `<div class="record-card"><div class="record-top"><div><div class="record-code">${esc(data.code)}</div><div class="muted">${esc(data.type)}</div></div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">${statusChip(data.status)}<button class="secondary reprint-record" data-code="${esc(data.code)}">Reprint QR</button></div></div><div class="record-grid"><div class="field"><label>Name</label><div class="value">${esc(data.name)||'—'}</div></div><div class="field"><label>Description tags</label><div class="value">${(data.description_tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join('')||'—'}</div></div><div class="field"><label>Operation Voltage</label><div class="value">${esc(data.operation_voltage)||'—'}</div></div><div class="field"><label>Bypass Protection Module</label><div class="value">${esc(data.bypass_protection)}</div></div><div class="field"><label>Emergency</label><div class="value">${esc(data.emergency)}</div></div><div class="field"><label>Details</label><div class="value">${esc(data.details)||'—'}</div></div>${extra}</div></div>`;
 }
 function connectionDisplay(c){
   if(c.endpoint_type==='TEXT') return `<div class="value">${esc(c.descriptive_text)}</div>`;
   if(c.endpoint_type==='CABLE') return `<div class="value">Cable QR: <b>${esc(c.endpoint_code)}</b>${c.descriptive_text?' · '+esc(c.descriptive_text):''}</div>`;
   return `<div class="value">Device QR: <b>${esc(c.endpoint_code)}</b> · Pin: <b>${esc(c.endpoint_pin)}</b>${c.descriptive_text?' · '+esc(c.descriptive_text):''}</div>`;
 }
-function showRecord(data){ show('record'); el('recordTitle').textContent=data.code; el('recordSubtitle').innerHTML=`${esc(data.type)} · ${statusChip(data.status)}`; el('recordBody').innerHTML=recordHtml(data); }
+function showRecord(data){ show('record'); el('recordTitle').textContent=data.code; el('recordSubtitle').innerHTML=`${esc(data.type)} · ${statusChip(data.status)}`; el('recordBody').innerHTML=recordHtml(data); el('recordBody').querySelector('.reprint-record')?.addEventListener('click',()=>printExistingCode(data.code)); }
 
 function renderTags(selected=[]){ return TAGS.map(t=>`<label style="display:inline-flex;flex-direction:row;align-items:center;gap:5px;margin-right:12px;font-weight:600"><input type="checkbox" class="tag-check" value="${esc(t)}" ${selected.includes(t)?'checked':''} style="width:auto">${esc(t)}</label>`).join(''); }
 function baseForm(data, mode){
@@ -105,7 +105,7 @@ function cableConnectionsForm(data){
   return `<div class="panel" style="margin-top:12px"><div class="form-section-title">Connections</div><div>${cons.map(c=>connectionSlotForm(c)).join('')}</div></div>`;
 }
 function connectionSlotForm(c){
-  return `<div class="connection-slot" data-slot="${c.slot}"><div class="slot-head"><b>Connection ${c.slot}</b></div><div class="inline"><label>Type<select class="conn-type"><option value="TEXT" ${c.endpoint_type==='TEXT'||!c.endpoint_type?'selected':''}>Descriptive text</option><option value="CABLE" ${c.endpoint_type==='CABLE'?'selected':''}>Cable QR</option><option value="DEVICE" ${c.endpoint_type==='DEVICE'?'selected':''}>Device QR</option></select></label><label>Code<input class="conn-code" inputmode="numeric" maxlength="3" value="${esc(c.endpoint_code||'')}" placeholder="scan or type"></label></div><div class="inline" style="margin-top:8px"><label>Device pin<input class="conn-pin" value="${esc(c.endpoint_pin||'')}" placeholder="required for device"></label><button type="button" class="secondary scan-slot" data-slot="${c.slot}">Scan QR</button></div><label style="margin-top:8px">Descriptive text<textarea class="conn-text" style="min-height:70px">${esc(c.descriptive_text||'')}</textarea></label><div class="muted slot-pin-help"></div></div>`;
+  return `<div class="connection-slot" data-slot="${c.slot}"><div class="slot-head"><b>Connection ${c.slot}</b></div><div class="inline"><label>Type<select class="conn-type"><option value="TEXT" ${c.endpoint_type==='TEXT'||!c.endpoint_type?'selected':''}>Descriptive text</option><option value="CABLE" ${c.endpoint_type==='CABLE'?'selected':''}>Cable QR</option><option value="DEVICE" ${c.endpoint_type==='DEVICE'?'selected':''}>Device QR</option></select></label><label>Code<input class="conn-code" inputmode="numeric" maxlength="4" value="${esc(c.endpoint_code||'')}" placeholder="scan or type"></label></div><div class="inline" style="margin-top:8px"><label>Device pin<input class="conn-pin" value="${esc(c.endpoint_pin||'')}" placeholder="required for device"></label><button type="button" class="secondary scan-slot" data-slot="${c.slot}">Scan QR</button></div><label style="margin-top:8px">Descriptive text<textarea class="conn-text" style="min-height:70px">${esc(c.descriptive_text||'')}</textarea></label><div class="muted slot-pin-help"></div></div>`;
 }
 function devicePinsForm(data){
   const pins=data.pins||[];
@@ -151,12 +151,12 @@ function bindConnectionUI(){
     });
   });
 }
-function isDeviceCode(code){return /^3\d{2}$/.test(code)}
+function isDeviceCode(code){return /^3\d{3}$/.test(code)}
 async function refreshAllDevicePinHelps(){for(const slot of [1,2]) await refreshSlotPinHelp(slot);}
 async function refreshSlotPinHelp(slot){
   const box=document.querySelector(`.connection-slot[data-slot="${slot}"]`); if(!box)return;
   const type=box.querySelector('.conn-type').value, code=box.querySelector('.conn-code').value.trim(), help=box.querySelector('.slot-pin-help'), pin=box.querySelector('.conn-pin');
-  if(type!=='DEVICE' || !/^\d{3}$/.test(code)){help.textContent='';return;}
+  if(type!=='DEVICE' || !/^\d{4}$/.test(code)){help.textContent='';return;}
   try{const pins=await api('/api/device/'+code+'/pins');help.textContent='Pins: '+(pins.map(p=>p.pin_name).join(', ')||'none');}catch(e){help.textContent=e.message;}
 }
 async function saveForm(data){
@@ -170,7 +170,29 @@ async function saveForm(data){
   }catch(e){toast(e.message,'error');}
 }
 
-function bindHome(){document.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>{const a=b.dataset.action; if(a==='scan'){openScanner('view',scanView)}else if(a==='link'){show('link');el('linkScanBtn').onclick=()=>openScanner('link',code=>{show('link');openForm(code,'link')})}else if(a==='edit'){show('edit');el('editScanBtn').onclick=()=>openScanner('edit',code=>{show('edit');openForm(code,'edit')})}else show(a);});}
+function bindHome(){document.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>{const a=b.dataset.action; if(a==='scan'){openScanner('view',scanView)}else if(a==='link'){show('link');el('linkScanBtn').onclick=()=>openScanner('link',code=>{show('link');openForm(code,'link')})}else if(a==='edit'){show('edit');el('editScanBtn').onclick=()=>openScanner('edit',code=>{show('edit');openForm(code,'edit')})}else if(a==='reprint'){show('reprint');}else show(a);});}
+
+async function printExistingCode(code){
+  code=validateScannedCode(code);
+  if(!code){toast('QR code must be exactly 4 digits.','error');return;}
+  try{
+    const data=await api('/api/qr/'+code);
+    window.open('/print-labels?codes='+encodeURIComponent(data.code),'_blank');
+  }catch(e){toast(e.message,'error');}
+}
+function openReprintResult(code){
+  const wrap=el('reprintResult');
+  wrap.innerHTML=`<div class="notice good"><b>${esc(code)}</b> is ready to print.</div><button id="reprintNowBtn">Print ${esc(code)} label</button>`;
+  el('reprintNowBtn').onclick=()=>printExistingCode(code);
+}
+function reprintScan(){
+  openScanner('reprint',async(code)=>{ code=validateScannedCode(code); if(!code){toast('QR code must be exactly 4 digits.','error');return;} try{await api('/api/qr/'+code); show('reprint'); openReprintResult(code);}catch(e){toast(e.message,'error');} });
+}
+async function reprintManual(){
+  const code=el('reprintManual').value.trim();
+  if(!validateScannedCode(code)){toast('QR code must be exactly 4 digits.','error');return;}
+  try{await api('/api/qr/'+code); openReprintResult(code);}catch(e){toast(e.message,'error');}
+}
 
 async function startBulk(){
   state.bulk={first:null,second:null,lastOperationId:null};
@@ -179,9 +201,9 @@ async function startBulk(){
   openScanner('bulk-first', code=>handleBulkCode(code));
 }
 async function handleBulkCode(code){
-  code=validateScannedCode(code); if(!code){toast('QR must encode exactly three digits.','error'); return;}
+  code=validateScannedCode(code); if(!code){toast('QR must encode exactly four digits.','error'); return;}
   const type=isDeviceCode(code)?'DEVICE':(isCableCode(code)?'CABLE':null);
-  if(!type){toast('Supported codes are 100–299 for cable or 300–999 for device.','error');return;}
+  if(!type){toast('Supported codes are 1000–2999 for cable or 3000–9999 for device.','error');return;}
   if(!state.bulk.first){state.bulk.first={code,type};el('bulkStatus').innerHTML=`First: <b>${code}</b> (${type}). Scan the second QR code.`;openScanner('bulk-second',handleBulkCode);return;}
   if(state.bulk.first.code===code){toast('Scan a different QR code.','error');openScanner('bulk-second',handleBulkCode);return;}
   state.bulk.second={code,type};
@@ -195,7 +217,7 @@ async function handleBulkCode(code){
     el('bulkStatus').textContent=`Ready: ${state.bulk.first.code} ↔ ${code}`;
   } else { await performBulkLink(); }
 }
-function isCableCode(code){return /^\d{3}$/.test(code)&&Number(code)>=100&&Number(code)<=299;}
+function isCableCode(code){return /^\d{4}$/.test(code)&&Number(code)>=1000&&Number(code)<=2999;}
 async function performBulkLink(){
   try{
     const pin=el('bulkPin')?.value||''; const data=await api('/api/connections/bulk',{method:'POST',body:JSON.stringify({first:state.bulk.first.code,second:state.bulk.second.code,pin})});
@@ -230,6 +252,7 @@ function init(){
   el('manualScanBtn').onclick=()=>scanView(el('manualScan').value.trim());
   el('linkScanBtn').onclick=()=>openScanner('link',code=>{show('link');openForm(code,'link')});
   el('editScanBtn').onclick=()=>openScanner('edit',code=>{show('edit');openForm(code,'edit')});
+  el('reprintScanBtn').onclick=reprintScan; el('reprintManualBtn').onclick=reprintManual;
   el('bulkStartBtn').onclick=startBulk;el('bulkUndoBtn').onclick=undoBulk;el('deactivateScanBtn').onclick=deactivateScan;el('deactivateBtn').onclick=()=>bulkAction('deactivate');el('clearBtn').onclick=()=>bulkAction('clear');el('generateBtn').onclick=generate;el('dbRefresh').onclick=loadDatabase;el('dbType').onchange=loadDatabase;el('dbStatus').onchange=loadDatabase;
   renderDeactivateList();
 }

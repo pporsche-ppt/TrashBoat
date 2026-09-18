@@ -32,15 +32,15 @@ const STATUSES = ['READY', 'ACTIVE', 'DEACTIVATED'];
 const TYPES = ['CABLE', 'DEVICE'];
 
 function validCode(code) {
-  return typeof code === 'string' && /^\d{3}$/.test(code);
+  return typeof code === 'string' && /^\d{4}$/.test(code);
 }
 
 function isCable(code) {
-  return validCode(code) && Number(code) >= 100 && Number(code) <= 299;
+  return validCode(code) && Number(code) >= 1000 && Number(code) <= 2999;
 }
 
 function isDevice(code) {
-  return validCode(code) && Number(code) >= 300 && Number(code) <= 999;
+  return validCode(code) && Number(code) >= 3000 && Number(code) <= 9999;
 }
 
 function expectedTypeFromCode(code) {
@@ -76,7 +76,7 @@ async function ensureDatabase() {
   if (!DATABASE_URL) throw new Error('DATABASE_URL is missing.');
   await pool.query(`
     CREATE TABLE IF NOT EXISTS qr_records (
-      code CHAR(3) PRIMARY KEY,
+      code VARCHAR(4) PRIMARY KEY,
       type VARCHAR(10) NOT NULL CHECK (type IN ('CABLE', 'DEVICE')),
       status VARCHAR(14) NOT NULL DEFAULT 'READY' CHECK (status IN ('READY', 'ACTIVE', 'DEACTIVATED')),
       name TEXT NOT NULL DEFAULT '',
@@ -91,7 +91,7 @@ async function ensureDatabase() {
 
     CREATE TABLE IF NOT EXISTS device_pins (
       id BIGSERIAL PRIMARY KEY,
-      device_code CHAR(3) NOT NULL REFERENCES qr_records(code) ON DELETE CASCADE,
+      device_code VARCHAR(4) NOT NULL REFERENCES qr_records(code) ON DELETE CASCADE,
       pin_name TEXT NOT NULL,
       pin_description TEXT NOT NULL DEFAULT '',
       UNIQUE(device_code, pin_name)
@@ -99,10 +99,10 @@ async function ensureDatabase() {
 
     CREATE TABLE IF NOT EXISTS connections (
       id BIGSERIAL PRIMARY KEY,
-      cable_code CHAR(3) NOT NULL REFERENCES qr_records(code) ON DELETE CASCADE,
+      cable_code VARCHAR(4) NOT NULL REFERENCES qr_records(code) ON DELETE CASCADE,
       slot SMALLINT NOT NULL CHECK (slot IN (1,2)),
       endpoint_type VARCHAR(10) NOT NULL CHECK (endpoint_type IN ('TEXT','CABLE','DEVICE')),
-      endpoint_code CHAR(3),
+      endpoint_code VARCHAR(4),
       endpoint_pin TEXT,
       descriptive_text TEXT NOT NULL DEFAULT '',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -120,6 +120,60 @@ async function ensureDatabase() {
     CREATE INDEX IF NOT EXISTS idx_connections_endpoint_code ON connections(endpoint_code);
     CREATE INDEX IF NOT EXISTS idx_qr_records_type_status ON qr_records(type,status);
   `);
+
+  // Upgrade databases created by the original 3-digit version.
+  // Cable codes 100-299 become 1100-1299, and device codes 300-999 become 3300-3999.
+  // New deployments are already VARCHAR(4), so this migration is skipped.
+  const col = await pool.query(`
+    SELECT character_maximum_length
+    FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='qr_records' AND column_name='code'
+  `);
+  if (col.rows[0] && Number(col.rows[0].character_maximum_length) === 3) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const existing = await client.query(`SELECT trim(code) AS code, type FROM qr_records ORDER BY code`);
+      const oldThreeDigit = existing.rows.filter((r) => /^\d{3}$/.test(r.code));
+      const mapping = oldThreeDigit.map((r) => ({
+        oldCode: r.code,
+        newCode: r.type === 'CABLE' ? `1${r.code}` : `3${r.code}`
+      }));
+      const seen = new Map();
+      for (const m of mapping) {
+        if (seen.has(m.newCode)) throw new Error(`4-digit migration collision for ${m.newCode}.`);
+        seen.set(m.newCode, true);
+      }
+      const conflicts = await client.query(
+        `SELECT q.code FROM qr_records q JOIN (SELECT unnest($1::text[]) AS new_code) m ON trim(q.code)=m.new_code`,
+        [mapping.map((m) => m.newCode)]
+      );
+      if (conflicts.rowCount) throw new Error(`4-digit migration collision with existing code ${trim(conflicts.rows[0].code)}.`);
+
+      await client.query('ALTER TABLE device_pins DROP CONSTRAINT IF EXISTS device_pins_device_code_fkey');
+      await client.query('ALTER TABLE connections DROP CONSTRAINT IF EXISTS connections_cable_code_fkey');
+      await client.query(`ALTER TABLE qr_records ALTER COLUMN code TYPE VARCHAR(4) USING trim(code)`);
+      await client.query(`ALTER TABLE device_pins ALTER COLUMN device_code TYPE VARCHAR(4) USING trim(device_code)`);
+      await client.query(`ALTER TABLE connections ALTER COLUMN cable_code TYPE VARCHAR(4) USING trim(cable_code)`);
+      await client.query(`ALTER TABLE connections ALTER COLUMN endpoint_code TYPE VARCHAR(4) USING CASE WHEN endpoint_code IS NULL THEN NULL ELSE trim(endpoint_code) END`);
+
+      for (const m of mapping) {
+        await client.query('UPDATE device_pins SET device_code=$2 WHERE device_code=$1', [m.oldCode, m.newCode]);
+        await client.query('UPDATE connections SET cable_code=$2 WHERE cable_code=$1', [m.oldCode, m.newCode]);
+        await client.query('UPDATE connections SET endpoint_code=$2 WHERE endpoint_code=$1', [m.oldCode, m.newCode]);
+        await client.query('UPDATE qr_records SET code=$2 WHERE code=$1', [m.oldCode, m.newCode]);
+      }
+      await client.query(`ALTER TABLE device_pins ADD CONSTRAINT device_pins_device_code_fkey FOREIGN KEY (device_code) REFERENCES qr_records(code) ON DELETE CASCADE`);
+      await client.query(`ALTER TABLE connections ADD CONSTRAINT connections_cable_code_fkey FOREIGN KEY (cable_code) REFERENCES qr_records(code) ON DELETE CASCADE`);
+      await client.query('COMMIT');
+      console.log(`Migrated ${mapping.length} existing 3-digit QR records to 4-digit codes.`);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
 }
 
 async function getRecord(code) {
@@ -289,7 +343,7 @@ app.get('/api/qr', async (req, res) => {
 
 app.get('/api/qr/:code', async (req, res) => {
   try {
-    if (!validCode(req.params.code)) return res.status(400).json({ error: 'QR code must be exactly 3 digits.' });
+    if (!validCode(req.params.code)) return res.status(400).json({ error: 'QR code must be exactly 4 digits.' });
     const record = await detailedRecord(req.params.code);
     if (!record) return res.status(404).json({ error: 'QR code not found.' });
     res.json(record);
@@ -302,7 +356,7 @@ app.post('/api/qr/link', requireAdmin, async (req, res) => {
   const client = await pool.connect();
   try {
     const code = cleanText(req.body.code, 3);
-    if (!validCode(code)) throw new Error('QR code must be exactly 3 digits.');
+    if (!validCode(code)) throw new Error('QR code must be exactly 4 digits.');
     const record = await getRecord(code);
     if (!record) throw new Error('QR code does not exist. Generate the QR code first.');
     if (record.status === 'DEACTIVATED') throw new Error('This QR code is permanently deactivated.');
@@ -334,7 +388,7 @@ app.put('/api/qr/:code', requireAdmin, async (req, res) => {
   const client = await pool.connect();
   try {
     const code = cleanText(req.params.code, 3);
-    if (!validCode(code)) throw new Error('QR code must be exactly 3 digits.');
+    if (!validCode(code)) throw new Error('QR code must be exactly 4 digits.');
     const record = await getRecord(code);
     if (!record) throw new Error('QR code not found.');
     if (record.status === 'DEACTIVATED') throw new Error('A deactivated QR code cannot be edited.');
@@ -425,26 +479,26 @@ app.post('/api/qr/bulk-clear', requireAdmin, async (req, res) => {
 });
 
 app.post('/api/generate', requireAdmin, async (req, res) => {
-  const cableAmount = Math.max(0, Math.min(1000, Number(req.body.cableAmount || 0)));
-  const deviceAmount = Math.max(0, Math.min(700, Number(req.body.deviceAmount || 0)));
+  const cableAmount = Math.max(0, Math.min(2000, Number(req.body.cableAmount || 0)));
+  const deviceAmount = Math.max(0, Math.min(7000, Number(req.body.deviceAmount || 0)));
   if (!Number.isInteger(cableAmount) || !Number.isInteger(deviceAmount)) return res.status(400).json({ error: 'Amounts must be whole numbers.' });
   if (cableAmount + deviceAmount === 0) return res.status(400).json({ error: 'Enter at least one QR code.' });
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const cableRows = await client.query(`SELECT code FROM qr_records WHERE code BETWEEN '100' AND '299' ORDER BY code`);
-    const deviceRows = await client.query(`SELECT code FROM qr_records WHERE code BETWEEN '300' AND '999' ORDER BY code`);
+    const cableRows = await client.query(`SELECT code FROM qr_records WHERE code BETWEEN '1000' AND '2999' ORDER BY code`);
+    const deviceRows = await client.query(`SELECT code FROM qr_records WHERE code BETWEEN '3000' AND '9999' ORDER BY code`);
     const cableUsed = new Set(cableRows.rows.map((r) => Number(r.code)));
     const deviceUsed = new Set(deviceRows.rows.map((r) => Number(r.code)));
     const created = [];
-    for (let n = 100; n <= 299 && created.filter((x) => x.type === 'CABLE').length < cableAmount; n++) {
+    for (let n = 1000; n <= 2999 && created.filter((x) => x.type === 'CABLE').length < cableAmount; n++) {
       if (cableUsed.has(n)) continue;
       const code = String(n);
       await client.query('INSERT INTO qr_records(code,type,status) VALUES($1,\'CABLE\',\'READY\')', [code]);
       created.push({ code, type: 'CABLE' });
     }
-    for (let n = 300; n <= 999 && created.filter((x) => x.type === 'DEVICE').length < deviceAmount; n++) {
+    for (let n = 3000; n <= 9999 && created.filter((x) => x.type === 'DEVICE').length < deviceAmount; n++) {
       if (deviceUsed.has(n)) continue;
       const code = String(n);
       await client.query('INSERT INTO qr_records(code,type,status) VALUES($1,\'DEVICE\',\'READY\')', [code]);
@@ -475,7 +529,7 @@ app.post('/api/connections/bulk', requireAdmin, async (req, res) => {
   const first = cleanText(req.body.first, 3);
   const second = cleanText(req.body.second, 3);
   const pin = cleanText(req.body.pin, 200);
-  if (!validCode(first) || !validCode(second)) return res.status(400).json({ error: 'Both QR codes must be three digits.' });
+  if (!validCode(first) || !validCode(second)) return res.status(400).json({ error: 'Both QR codes must be four digits.' });
   if (first === second) return res.status(400).json({ error: 'You cannot link a QR code to itself.' });
 
   const firstType = expectedTypeFromCode(first);

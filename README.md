@@ -4,9 +4,9 @@ A Render-ready QR database for physical wire/cable tracking and device pin track
 
 ## What it does
 
-- QR codes encode only the 3-digit number (example: `127` or `301`).
-- Cable QR range: `100–299`.
-- Device QR range: `300–999`.
+- QR codes encode only the 4-digit number (example: `127` or `301`).
+- Cable QR range: `1000–2999`.
+- Device QR range: `3000–9999`.
 - QR status: `READY`, `ACTIVE`, `DEACTIVATED`.
 - Link READY QR → ACTIVE.
 - Edit ACTIVE QR.
@@ -104,3 +104,10 @@ The QR does **not** contain your Render URL. Therefore you can move the website 
 Anyone who can reach the site can view a QR record. Link/edit/deactivate/generate/bulk operations require the admin password.
 
 For a public internet deployment, keep your `ADMIN_PASSWORD` private and use a long random `JWT_SECRET`.
+
+
+## Reprint existing QR labels
+Use **Reprint QR** from the home screen. Scan or enter an existing 4-digit code. The app checks that the code exists in PostgreSQL and opens the same 2 cm × 1 cm label layout for printing again. There is also a **Reprint QR** button on every record view.
+
+## Four-digit numbering
+Cable QR codes use `1000–2999` (prefix 1 or 2). Device QR codes use `3000–9999` (prefix 3). The QR payload is still only the number itself. If the database was created by the earlier 3-digit version, startup automatically migrates existing 3-digit records by prefixing cables with `1` and devices with `3` (for example `101 → 1101`, `301 → 3301`).
